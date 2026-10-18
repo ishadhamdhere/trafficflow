@@ -1,0 +1,196 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#050914">
+    <title>TrafficFlow | Traffic Control Center</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <div class="brand-icon">🚦</div>
+            <div>
+                <h1>TrafficFlow</h1>
+                <p>INTELLIGENT TRAFFIC CONTROL SYSTEM</p>
+            </div>
+        </div>
+        <div class="status"><span class="online-dot"></span> SYSTEM ONLINE</div>
+    </header>
+
+    <main class="container">
+        <section class="welcome">
+            <div>
+                <p class="eyebrow">TRAFFIC OPERATIONS / CONTROL CENTER</p>
+                <h2>Traffic Management Dashboard</h2>
+                <p class="muted">Monitor traffic, manage queues and control signals in real time.</p>
+            </div>
+            <div class="mode-label"><span class="mode-dot"></span> SIMULATION MODE</div>
+        </section>
+
+        <section class="stats-grid">
+            <article class="stat-card">
+                <div class="stat-top"><span class="stat-icon">🚘</span><span class="stat-tag">LIVE</span></div>
+                <div class="stat-label">Vehicles Waiting</div>
+                <div class="stat-number" id="totalWaiting">0</div>
+                <div class="stat-note">Across all four lanes</div>
+            </article>
+            <article class="stat-card">
+                <div class="stat-top"><span class="stat-icon">✓</span><span class="stat-tag">TOTAL</span></div>
+                <div class="stat-label">Vehicles Passed</div>
+                <div class="stat-number" id="totalPassed">0</div>
+                <div class="stat-note">Vehicles cleared this session</div>
+            </article>
+            <article class="stat-card">
+                <div class="stat-top"><span class="stat-icon">↗</span><span class="stat-tag">QUEUE</span></div>
+                <div class="stat-label">Busiest Lane</div>
+                <div class="stat-number small-number" id="busiestLane">None</div>
+                <div class="stat-note">Based on waiting vehicles</div>
+            </article>
+            <article class="stat-card">
+                <div class="stat-top"><span class="stat-icon">◉</span><span class="stat-tag">SIGNAL</span></div>
+                <div class="stat-label">Active Signal</div>
+                <div class="stat-number small-number" id="activeSignal">None</div>
+                <div class="stat-note">Current green lane</div>
+            </article>
+        </section>
+
+        <section class="content-grid">
+            <article class="panel intersection-panel">
+                <div class="panel-heading">
+                    <div>
+                        <p class="panel-kicker">LIVE MONITORING</p>
+                        <h3>Intersection Overview</h3>
+                        <p class="muted">Four-way traffic simulation</p>
+                    </div>
+                    <span class="live-label"><span class="live-dot"></span> LIVE VIEW</span>
+                </div>
+
+                <div class="intersection">
+                    <div class="ground-grid"></div>
+                    <div class="road road-vertical"></div>
+                    <div class="road road-horizontal"></div>
+                    <div class="road-lines vertical-lines"></div>
+                    <div class="road-lines horizontal-lines"></div>
+
+                    <div class="lane-label north-label">NORTH <span>↑</span></div>
+                    <div class="lane-label south-label">SOUTH <span>↓</span></div>
+                    <div class="lane-label east-label">EAST <span>→</span></div>
+                    <div class="lane-label west-label">WEST <span>←</span></div>
+
+                    <div class="lane-marker marker-north"></div>
+                    <div class="lane-marker marker-south"></div>
+                    <div class="lane-marker marker-east"></div>
+                    <div class="lane-marker marker-west"></div>
+
+                    <div class="signal signal-north" id="signalNorth" aria-label="North traffic signal">
+                        <span class="light red active"></span>
+                        <span class="light yellow"></span>
+                        <span class="light green"></span>
+                    </div>
+                    <div class="signal signal-south" id="signalSouth" aria-label="South traffic signal">
+                        <span class="light red active"></span>
+                        <span class="light yellow"></span>
+                        <span class="light green"></span>
+                    </div>
+                    <div class="signal signal-east" id="signalEast" aria-label="East traffic signal">
+                        <span class="light red active"></span>
+                        <span class="light yellow"></span>
+                        <span class="light green"></span>
+                    </div>
+                    <div class="signal signal-west" id="signalWest" aria-label="West traffic signal">
+                        <span class="light red active"></span>
+                        <span class="light yellow"></span>
+                        <span class="light green"></span>
+                    </div>
+
+                    <div class="intersection-center"><span>✚</span></div>
+                    <div class="car car-north" id="carNorth" aria-label="North lane vehicle">🚗</div>
+                    <div class="car car-east" id="carEast" aria-label="East lane vehicle">🚙</div>
+                    <div class="car car-south" id="carSouth" aria-label="South lane vehicle">🚕</div>
+                    <div class="car car-west" id="carWest" aria-label="West lane vehicle">🚐</div>
+
+                    <div class="intersection-caption">TRAFFIC NETWORK <span>● CONNECTED</span></div>
+                </div>
+
+                <div class="signal-status">
+                    <span class="online-dot"></span>
+                    <span id="signalMessage">All signals are red. Select a signal to begin.</span>
+                </div>
+            </article>
+
+            <article class="panel controls-panel">
+                <div class="panel-heading">
+                    <div>
+                        <p class="panel-kicker">COMMAND INTERFACE</p>
+                        <h3>Traffic Controls</h3>
+                        <p class="muted">Manage signals and vehicles</p>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" id="autoBtn">⚡ Automatic Signal <span>→</span></button>
+                <button class="btn btn-secondary" id="manualBtn">🚦 Manual Signal <span>→</span></button>
+                <button class="btn btn-secondary" id="passBtn">✓ Pass One Vehicle <span>→</span></button>
+
+                <div class="divider"></div>
+
+                <h4><span class="section-icon">＋</span> Add Vehicle</h4>
+                <form id="vehicleForm">
+                    <label for="vehicleId">Vehicle ID</label>
+                    <input id="vehicleId" type="number" min="1" placeholder="e.g. 101" required>
+
+                    <label for="vehicleType">Vehicle Type</label>
+                    <select id="vehicleType">
+                        <option value="Car">Car</option>
+                        <option value="Bus">Bus</option>
+                        <option value="Bike">Bike</option>
+                    </select>
+
+                    <label for="vehicleLane">Select Lane</label>
+                    <select id="vehicleLane">
+                        <option value="North">North</option>
+                        <option value="South">South</option>
+                        <option value="East">East</option>
+                        <option value="West">West</option>
+                    </select>
+
+                    <button class="btn btn-success" type="submit">＋ Add Vehicle to Queue</button>
+                </form>
+
+                <div class="divider"></div>
+
+                <h4><span class="section-icon">⌕</span> Search Vehicle</h4>
+                <form id="searchForm">
+                    <label for="searchId">Vehicle ID</label>
+                    <div class="search-row">
+                        <input id="searchId" type="number" min="1" placeholder="Enter vehicle ID" required>
+                        <button class="btn btn-secondary" type="submit">Search</button>
+                    </div>
+                </form>
+                <p id="searchResult" class="search-result">Search results will appear here.</p>
+            </article>
+        </section>
+
+        <section class="panel queue-panel">
+            <div class="panel-heading">
+                <div>
+                    <p class="panel-kicker">QUEUE MONITORING</p>
+                    <h3>Lane Queue Management</h3>
+                    <p class="muted">Vehicles currently waiting at the intersection</p>
+                </div>
+                <button class="btn btn-secondary btn-small" id="refreshBtn">↻ Refresh</button>
+            </div>
+            <div class="queue-grid" id="queueGrid"></div>
+        </section>
+
+        <footer>
+            <span>TrafficFlow <span class="footer-separator">/</span> College DSA Project</span>
+            <span>Circular Queue <span class="footer-separator">·</span> Linear Search <span class="footer-separator">·</span> Greedy Selection</span>
+        </footer>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
