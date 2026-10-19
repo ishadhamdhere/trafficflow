@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -13,16 +13,16 @@ HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", "8000"))
 
 LANES = {
-    "north": "North",
-    "south": "South",
-    "east": "East",
-    "west": "West"
+    1: "North",
+    2: "South",
+    3: "East",
+    4: "West"
 }
 
 VEHICLE_TYPES = {
-    "car": 1,
-    "bus": 2,
-    "bike": 3
+    1: "Car",
+    2: "Bus",
+    3: "Bike"
 }
 
 engine = None
@@ -32,11 +32,11 @@ engine_lock = threading.Lock()
 def start_engine():
     global engine
 
-    executable = BASE_DIR / "main"
+    executable = BASE_DIR / ("main.exe" if os.name == "nt" else "main")
 
     if not executable.is_file():
         raise FileNotFoundError(
-            f"C engine not found: {executable}"
+            f"C engine executable not found: {executable}"
         )
 
     engine = subprocess.Popen(
@@ -51,13 +51,13 @@ def start_engine():
     )
 
     if engine.poll() is not None:
-        raise RuntimeError("C engine exited during startup.")
+        raise RuntimeError("The C traffic engine failed to start.")
 
 
 def send_to_engine(command):
     with engine_lock:
         if engine is None or engine.poll() is not None:
-            raise RuntimeError("C engine is not running.")
+            raise RuntimeError("The C traffic engine is not running.")
 
         engine.stdin.write(command + "\n")
         engine.stdin.flush()
@@ -65,34 +65,18 @@ def send_to_engine(command):
         response = engine.stdout.readline()
 
         if not response:
-            raise RuntimeError(
-                "C engine returned no response. "
-                "Check that main.c supports server mode."
-            )
+            raise RuntimeError("The C engine returned no response.")
 
         try:
             return json.loads(response)
         except json.JSONDecodeError as exc:
             raise RuntimeError(
-                "C engine did not return valid JSON: "
-                + response[:200]
+                "The C engine returned invalid JSON: " + response
             ) from exc
 
 
-def normalize_lane(value):
-    if not isinstance(value, str):
-        raise ValueError(
-            "Select a lane: North, South, East, or West."
-        )
-
-    lane = LANES.get(value.strip().lower())
-
-    if lane is None:
-        raise ValueError(
-            "Lane must be North, South, East, or West."
-        )
-
-    return lane
+def get_state():
+    return send_to_engine("STATUS")
 
 
 def send_json(handler, data, status=200):
@@ -100,8 +84,7 @@ def send_json(handler, data, status=200):
 
     handler.send_response(status)
     handler.send_header(
-        "Content-Type",
-        "application/json; charset=utf-8"
+        "Content-Type", "application/json; charset=utf-8"
     )
     handler.send_header("Content-Length", str(len(body)))
     handler.send_header("Cache-Control", "no-store")
@@ -109,7 +92,64 @@ def send_json(handler, data, status=200):
     handler.wfile.write(body)
 
 
-class TrafficFlowHandler(BaseHTTPRequestHandler):
+def normalize_lane(value):
+    if isinstance(value, str):
+        value = value.strip().title()
+        if value in LANES.values():
+            return list(LANES.keys())[
+                list(LANES.values()).index(value)
+            ]
+
+    if isinstance(value, int) and not isinstance(value, bool):
+        if value in LANES:
+            return value
+
+    raise ValueError(
+        "Lane must be 1 (North), 2 (South), 3 (East), or 4 (West)."
+    )
+
+
+def normalize_vehicle_type(value):
+    if isinstance(value, str):
+        value = value.strip().title()
+        for number, name in VEHICLE_TYPES.items():
+            if value == name:
+                return number
+
+    if isinstance(value, int) and not isinstance(value, bool):
+        if value in VEHICLE_TYPES:
+            return value
+
+    raise ValueError("Vehicle type must be Car, Bus, or Bike.")
+
+
+def positive_id(value):
+    if isinstance(value, bool):
+        raise ValueError("Vehicle ID must be a positive integer.")
+
+    try:
+        vehicle_id = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("Vehicle ID must be a positive integer.")
+
+    if vehicle_id <= 0:
+        raise ValueError("Vehicle ID must be a positive integer.")
+
+    return vehicle_id
+
+
+def add_state(result):
+    try:
+        result["state"] = get_state()
+    except Exception as exc:
+        result["stateError"] = str(exc)
+
+    return result
+
+
+class TrafficFlowHandler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(BASE_DIR), **kwargs)
 
     def log_message(self, format_string, *args):
         print(
@@ -122,59 +162,19 @@ class TrafficFlowHandler(BaseHTTPRequestHandler):
 
         if path == "/api/status":
             try:
-                send_json(self, send_to_engine("STATUS"))
+                send_json(self, get_state())
             except Exception as exc:
-                print(str(exc), file=sys.stderr, flush=True)
                 send_json(
                     self,
-                    {"success": False, "error": str(exc)},
+                    {"ok": False, "error": str(exc)},
                     500
                 )
             return
 
-        files = {
-            "/": "index.html",
-            "/index.html": "index.html",
-            "/style.css": "style.css",
-            "/script.js": "script.js"
-        }
+        if path == "/":
+            self.path = "/index.html"
 
-        filename = files.get(path)
-
-        if filename is None:
-            send_json(
-                self,
-                {"success": False, "error": "Page not found."},
-                404
-            )
-            return
-
-        file_path = BASE_DIR / filename
-
-        if not file_path.is_file():
-            send_json(
-                self,
-                {"success": False, "error": "Website file missing."},
-                404
-            )
-            return
-
-        content = file_path.read_bytes()
-
-        content_type = (
-            "text/html; charset=utf-8"
-            if filename.endswith(".html")
-            else "text/css; charset=utf-8"
-            if filename.endswith(".css")
-            else "application/javascript; charset=utf-8"
-        )
-
-        self.send_response(200)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(content)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(content)
+        super().do_GET()
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -183,7 +183,12 @@ class TrafficFlowHandler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
 
             if length <= 0 or length > 1000000:
-                raise ValueError("Invalid request body.")
+                send_json(
+                    self,
+                    {"ok": False, "error": "Invalid request body."},
+                    400
+                )
+                return
 
             data = json.loads(
                 self.rfile.read(length).decode("utf-8")
@@ -193,99 +198,72 @@ class TrafficFlowHandler(BaseHTTPRequestHandler):
                 raise ValueError("Expected a JSON object.")
 
             if path == "/api/add":
-                lane = normalize_lane(data.get("lane"))
-
-                try:
-                    vehicle_id = int(data.get("id"))
-                except (ValueError, TypeError):
-                    raise ValueError(
-                        "Vehicle ID must be an integer."
-                    )
-
-                vehicle_type = data.get("type")
-
-                if vehicle_id <= 0:
-                    raise ValueError(
-                        "Vehicle ID must be positive."
-                    )
-
-                if not isinstance(vehicle_type, str):
-                    raise ValueError(
-                        "Vehicle type must be Car, Bus, or Bike."
-                    )
-
-                type_code = VEHICLE_TYPES.get(
-                    vehicle_type.strip().lower()
-                )
-
-                if type_code is None:
-                    raise ValueError(
-                        "Vehicle type must be Car, Bus, or Bike."
-                    )
-
-                result = send_to_engine(
-                    f"ADD {lane} {vehicle_id} {type_code}"
-                )
+                result = self.handle_add(data)
 
             elif path == "/api/signal":
-                lane = normalize_lane(data.get("lane"))
-                result = send_to_engine(f"SIGNAL {lane}")
+                result = self.handle_signal(data)
 
             elif path == "/api/automatic":
                 result = send_to_engine("AUTO")
+                result = add_state(result)
 
             elif path == "/api/search":
-                try:
-                    vehicle_id = int(data.get("id"))
-                except (ValueError, TypeError):
-                    raise ValueError(
-                        "Vehicle ID must be an integer."
-                    )
-
-                if vehicle_id <= 0:
-                    raise ValueError(
-                        "Vehicle ID must be positive."
-                    )
-
-                result = send_to_engine(
-                    f"SEARCH {vehicle_id}"
-                )
+                result = self.handle_search(data)
 
             else:
                 send_json(
                     self,
-                    {"success": False, "error": "API endpoint not found."},
+                    {"ok": False, "error": "API endpoint not found."},
                     404
                 )
                 return
 
             send_json(self, result)
 
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
             send_json(
                 self,
-                {"success": False, "error": "Invalid JSON request."},
-                400
-            )
-
-        except (ValueError, TypeError) as exc:
-            send_json(
-                self,
-                {"success": False, "error": str(exc)},
+                {"ok": False, "error": str(exc)},
                 400
             )
 
         except Exception as exc:
-            print(
-                f"[TrafficFlow] Request error: {exc}",
-                file=sys.stderr,
-                flush=True
-            )
+            print(f"[TrafficFlow] Request error: {exc}", flush=True)
             send_json(
                 self,
-                {"success": False, "error": str(exc)},
+                {"ok": False, "error": str(exc)},
                 500
             )
+
+    def handle_add(self, data):
+        lane = normalize_lane(data.get("lane"))
+        vehicle_id = positive_id(data.get("id"))
+        vehicle_type = normalize_vehicle_type(data.get("type"))
+
+        result = send_to_engine(
+            f"ADD {lane} {vehicle_id} {vehicle_type}"
+        )
+
+        return add_state(result)
+
+    def handle_signal(self, data):
+        lane = normalize_lane(data.get("lane"))
+
+        result = send_to_engine(f"SIGNAL {lane}")
+
+        return add_state(result)
+
+    def handle_search(self, data):
+        vehicle_id = positive_id(data.get("id"))
+        result = send_to_engine(f"SEARCH {vehicle_id}")
+
+        vehicle = result.get("vehicle")
+
+        if vehicle:
+            result["vehicleLane"] = vehicle.get("lane")
+            result["lane"] = vehicle.get("lane")
+
+        return add_state(result)
 
 
 def main():
@@ -298,14 +276,18 @@ def main():
         )
 
         print(
-            f"TrafficFlow running on port {PORT}",
+            f"TrafficFlow server running on port {PORT}",
             flush=True
         )
 
         server.serve_forever()
 
     except KeyboardInterrupt:
-        print("TrafficFlow stopping...", flush=True)
+        print("\nTrafficFlow server stopping...", flush=True)
+
+    except Exception as exc:
+        print(f"Startup error: {exc}", file=sys.stderr, flush=True)
+        raise
 
     finally:
         if engine is not None and engine.poll() is None:
